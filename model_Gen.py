@@ -3,12 +3,12 @@ import os
 
 # Map user input to Sequelize data types
 sequelize_data_types = {
-    'int': 'DataTypes.INTEGER',
-    'float': 'DataTypes.FLOAT',
-    'double': 'DataTypes.DOUBLE',
-    'string': 'DataTypes.STRING',
-    'date': 'DataTypes.DATE',
-    'boolean': 'DataTypes.BOOLEAN'
+    'int': 'INTEGER',
+    'float': 'FLOAT',
+    'double': 'DDOUBLE',
+    'string': 'DSTRING',
+    'date': 'DATE',
+    'boolean': 'BOOLEAN'
 }
 
 def to_snake_case(name):
