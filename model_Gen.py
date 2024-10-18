@@ -23,7 +23,7 @@ def parse_field_input(field_input):
         raise ValueError("Invalid format. The correct format is {NAME}:{DATATYPE} or {NAME}:{DATATYPE}->{REFERENCE TABLE}:{REFERENCE NAME}")
 
     field_name = to_snake_case(field_parts[0])  # Convert to snake_case
-    data_type = field_parts[1].split(" ")[0].upper()  # Get datatype
+    data_type = field_parts[1].split(" ")[0].lower()  # Get datatype
 
     # Check if it's a primary key
     is_primary_key = False
@@ -43,68 +43,95 @@ def parse_field_input(field_input):
         reference_key = to_snake_case(reference_key)
 
     return {
-        'name': field_name,
+        'field_name': field_name,
         'data_type': data_type,
         'is_primary_key': is_primary_key,
         'reference_table': reference_table,
         'reference_key': reference_key
     }
 
-
 def generate_model(model_name, fields):
     """Generate the Sequelize model code."""
     model_name = model_name.capitalize()  # Capitalize the model name
     model_code = f"import {{ DataTypes, Model, Optional, Sequelize }} from 'sequelize';\n"
-    model_code += f"\n// Define the attributes for the {model_name} model"
-    model_code += f"\ninterface {model_name}Attributes {{\n"
+    model_code += f"\n// Define the attributes for the {model_name} model\n"
+    model_code += f"interface {model_name}Attributes {{\n"
 
+    # Define interface attributes
     for field in fields:
-        field_name, data_type, reference_table, reference_key, is_primary = field
+        field_name = field['field_name']
+        data_type = field['data_type']
+        reference_table = field['reference_table']
+        reference_key = field['reference_key']
+        is_primary = field['is_primary_key']
+
         if reference_table:
             model_code += f"    {field_name}: number;  // Foreign key to {reference_table} table\n"
         elif is_primary:
             model_code += f"    {field_name}: number;  // Primary key\n"
         else:
-            model_code += f"    {field_name}: {data_type};\n"
+            model_code += f"    {field_name}: {sequelize_data_types.get(data_type, 'DataTypes.STRING')};\n"
 
     model_code += "    created_at?: Date;\n    updated_at?: Date;\n}\n\n"
 
+    # Define creation attributes with optional fields
     model_code += f"// Some fields are optional during creation\n"
     model_code += f"interface {model_name}CreationAttributes extends Optional<{model_name}Attributes, 'created_at' | 'updated_at'> {{}}\n\n"
 
+    # Extend Sequelize's Model class
     model_code += f"// Extend Sequelize's Model class for {model_name}\n"
     model_code += f"class {model_name} extends Model<{model_name}Attributes, {model_name}CreationAttributes> implements {model_name}Attributes {{\n"
+    
+    # Define class attributes
     for field in fields:
-        field_name, data_type, reference_table, reference_key, is_primary = field
-        if reference_table:
-            model_code += f"    public {field_name}!: number;\n"
-        elif is_primary:
+        field_name = field['field_name']
+        is_primary = field['is_primary_key']
+
+        if is_primary:
             model_code += f"    public {field_name}!: number;\n"
         else:
-            model_code += f"    public {field_name}!: {data_type};\n"
+            model_code += f"    public {field_name}!: {sequelize_data_types.get(field['data_type'], 'string')};\n"
+
     model_code += "    public readonly created_at!: Date;\n    public readonly updated_at!: Date;\n}\n\n"
 
+    # Initialize model
     model_code += f"// Function to initialize the {model_name} model\n"
     model_code += f"const init{model_name} = (sequelize: Sequelize) => {{\n"
     model_code += f"    {model_name}.init({{\n"
 
+    # Add fields to init function
     for field in fields:
-        field_name, data_type, reference_table, reference_key, is_primary = field
+        field_name = field['field_name']
+        data_type = field['data_type']
+        reference_table = field['reference_table']
+        reference_key = field['reference_key']
+        is_primary = field['is_primary_key']
+        
         sequelize_type = sequelize_data_types.get(data_type, "DataTypes.STRING")
+        
+        # Primary key case
         if is_primary:
             model_code += f"        {field_name}: {{\n            type: {sequelize_type}.UNSIGNED,\n            autoIncrement: true,\n            primaryKey: true,\n        }},\n"
+        
+        # Foreign key case
         elif reference_table:
             model_code += f"        {field_name}: {{\n            type: {sequelize_type}.UNSIGNED,\n            allowNull: false,\n            references: {{\n                model: '{reference_table}',\n                key: '{reference_key}',\n            }},\n            onDelete: 'CASCADE',\n            onUpdate: 'CASCADE',\n        }},\n"
+        
+        # Regular field
         else:
             model_code += f"        {field_name}: {{\n            type: {sequelize_type},\n            allowNull: true,\n        }},\n"
 
+    # Add timestamps
     model_code += "        created_at: {\n            type: DataTypes.DATE,\n            allowNull: false,\n            defaultValue: DataTypes.NOW,\n        },\n"
     model_code += "        updated_at: {\n            type: DataTypes.DATE,\n            allowNull: false,\n            defaultValue: DataTypes.NOW,\n        }\n"
     model_code += f"    }}, {{\n        sequelize,\n        tableName: '{model_name.lower()}s',\n        modelName: '{model_name}',\n    }});\n"
     model_code += f"    return {model_name};\n}};\n\n"
+
+    # Export the model
     model_code += f"export {{ init{model_name} }};\nexport default {model_name};\n"
 
     return model_code
+
 
 def main():
     print("Welcome to the Sequelize Model Generator Script!")
@@ -125,7 +152,7 @@ def main():
         if field_input.lower() == '/rev':
             if fields:
                 removed_field = fields.pop()
-                print(f"Removed the last entry: {removed_field[0]}")
+                print(f"Removed the last entry: {removed_field['field_name']}")
             else:
                 print("No entries to revert.")
             continue
@@ -139,15 +166,14 @@ def main():
     # Generate the model code
     model_code = generate_model(model_name, fields)
     directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'generated-models')
-    
+    print(directory)
     # Create the directory if it doesn't exist
     if not os.path.exists(directory):
         os.makedirs(directory)
     
     # Define the path to the model file
-    output_file = os.path.join(directory, f'{model_name}.ts')
+    output_file = os.path.join(directory, f'{model_name.lower()}_model.ts')
     # Write the generated code to a TypeScript file
-    output_file = f"{model_name.lower()}Model.ts"
     with open(output_file, 'w') as file:
         file.write(model_code)
     
